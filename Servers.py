@@ -1,4 +1,4 @@
-import SocketServer
+import socketserver 
 import socket
 import threading
 import multiprocessing #TODO
@@ -37,7 +37,7 @@ class HTTPServer(VirtualServer):
     def run(self):
         try:
             logging.debug("Serving HTTP at port %d" % self.port)
-            http_server = SocketServer.TCPServer(("", self.port)), Handlers.BaseHandler)
+            http_server = SocketServer.TCPServer(("", self.port), Handlers.BaseHandler)
             http_server.serve_forever()
         except (KeyboardInterrupt):
             logging.warn("Keyboard interrupt detected")
@@ -55,9 +55,9 @@ class HTTPSServer(HTTPServer):
 
     def run(self):
         try:
-            logging.debug("Serving HTTPS at port %s" % (self.port))
-            https = HTTPServer(("", int(self.port)), Handlers.HTTPShandler)
-            https.socket = ssl.wrap_socket(https.socket, self.cert, server_side=True, self.key)
+            logging.debug("Serving HTTPS at port %s" % self.port)
+            https = HTTPServer(("", self.port), Handlers.HTTPShandler)
+            https.socket = ssl.wrap_socket(https.socket, self.cert, server_side=True, keyfile=self.key)
             https.serve_forever()
         except (KeyboardInterrupt, SystemExit):
             logging.warn("Keyboard interrupt detected")
