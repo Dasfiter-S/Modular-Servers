@@ -150,7 +150,7 @@ class HTTPShandler(object):
                     server_response += response_content
                 self.connection.sendall(server_response)
 
-class Controller(IOitems):
+class DNSHandler(IOitems):
 
     #Receives the raw DNS query data and extracts the name of the address. Checks the address agaisnt specified
     #lists. If the address is not found then it is forwarded to an external DNS to resolve. Forwarded
