@@ -1,10 +1,7 @@
-import SocketServer
+import socketserver
 import socket
 import threading
 import sys
-import Controller
-import View
-import BaseHTTPServer
 import ssl
 import logging
 import Util
@@ -15,23 +12,15 @@ import json
 import shutil
 import traceback
 import OpenSSL
+from http.server import BaseHTTPRequestHandler
 from dnslib import *
 
-class HandlerFactory(object):
 
-    def http_factory(self, name):
-        if name == 'nginx': return View.NginxServerHandler
-        elif name == 'Apache': return View.ApacheServerHandler
-        elif name == 'gws': return View.GwsServerHandler
-        elif name == 'IIS': return View.IISServerHandler
-        else:
-            logging.debug('%s type of handler not found.' % (name))
-            print '%s type of handler not found.' % (name)
-
-    def https_factory(self):
-        return View.HTTPShandler
-
-class BaseHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+class BaseHandler(BaseHTTPRequestHandler):
+    """
+    This is the base handler for requests, does a basic job of
+    taking in requests and processing them. 
+    """
     server_version = ''
     sys_version = ''
 
@@ -103,9 +92,9 @@ class HTTPShandler(object):
 #------------------------------------------------Move to JSON file
     def __generateHeaders(self, code):
         header = ''
-        if code is 200:
+        if code == 200:
             header = 'HTTP/1.1 %d OK\n' % (code)
-        elif code is 404:
+        elif code == 404:
             header = 'HTTP/1.1 %d Not Found\n' % (code)
         current_date = time.strftime('%a, %d %b %Y %H:%M:%S', time.localtime())
         header += 'Date: %s\n' % (current_date)
@@ -119,7 +108,7 @@ class HTTPShandler(object):
         if (request_method == 'GET') or (request_method == 'HEAD'):
             file_requested = self.request.split(' ')
             file_requested = file_requested[1]
-            print 'Request type: %s' % (request_method)
+            logging.debug('Request type: %s' % request_method)
             if file_requested == '/':
                 subString = re.search('\Awww', self.host)
                 if subString is not None:
@@ -133,16 +122,16 @@ class HTTPShandler(object):
                             location = index
                             break
                 try:
-                    print location
+                    logging.debug("File location: %s" % location)
                     location = re.sub('/index', '/./index', location)
                     with open(location, 'rb') as file_handler:
                         if (request_method == 'GET'):
-                            print 'Fetching index to serve'
+                            logging.debug('Fetching index to serve')
                             response_content = file_handler.read()
-                    print 'Sending response 200'
+                    logging.debug('Sending response 200')
                     response_headers = self.__generateHeaders(200)
                 except Exception as e:
-                    print 'File not found'
+                    logging.error('File not found')
                     response_headers = self.__generateHeaders(404)
 
                 server_response = response_headers.encode()
@@ -150,26 +139,25 @@ class HTTPShandler(object):
                     server_response += response_content
                 self.connection.sendall(server_response)
 
-class DNSHandler(IOitems):
-
-    #Receives the raw DNS query data and extracts the name of the address. Checks the address agaisnt specified
-    #lists. If the address is not found then it is forwarded to an external DNS to resolve. Forwarded
-    #requests send the raw query data and receive raw data.
+class DNSHandler():
+    """
+    Receives the raw DNS query data and extracts the name of the address. Checks the address agaisnt specified
+    lists. If the address is not found then it is forwarded to an external DNS to resolve. Forwarded
+    requests send the raw query data and receive raw data.
+    """
+    def __init__(self):
+        self.setup_data = Setup()
+        
     def dns_response(self, data):
         request = DNSRecord.parse(data)
-        print 'Searching: \n %s' % (str(request))
         logging.debug('Searching: \n %s' % (str(request)))
         reply = DNSRecord(DNSHeader(id=request.header.id, qr=1, aa=1, ra=1), q=request.q)
         query_name = request.q.qname                     #is preserved so that we can reply with proper formatting later
         str_query = repr(query_name)                     #remove class formatting
         str_query = str_query[12:-2]                     #DNSLabel type, strip class and take out string
-        print 'Query: ', str_query
+        logging.debug("Query: %s" % str_query)
         #Dictionary is loaded as such because of ease of access for the domain names
-        list_names = Model.setLists(self)
-        domainList = self.loadFile(list_names[0])
-        domain_dict = dict(domainList)
-        blackList = self.loadFile(list_names[1])
-        black_dictionary = dict(blackList)
+        black_dictionary = dict(self.setup_data.setLists())
         #Keep the domain name and an IP address in the blacklist. This way you can change line 282 and instead of redirecting
         #to address 127.0.0.1 for all blacklist addresses you can personally choose where to send each of those. Just copy
         #rdata=A(black_dictionary[str_query]))) instead of the current rdata=A('217.0.0.1')))
@@ -177,33 +165,26 @@ class DNSHandler(IOitems):
         if black_dictionary.get(str_query):
             reply.add_answer(RR(rname=query_name, rtype=1, rclass=1, ttl=300, rdata=A('127.0.0.1')))
         else:
-            if domain_dict.get(str_query):
-                reply.add_answer(RR(rname=query_name, rtype=1, rclass=1, ttl=300, rdata=A(domain_dict[str_query])))
-            else:
-                try:
-                    realDNS = socket.socket( socket.AF_INET, socket.SOCK_DGRAM)
-                    realDNS.sendto(data,('8.8.8.8', 53))
-                    answerData, fromaddr = realDNS.recvfrom(1024)
-                    realDNS.close()
-                    readableAnswer = DNSRecord.parse(answerData)
-                    print'--------- Reply:\n %s' % (str(readableAnswer))
-                    logging.debug('DNS Reply: \n %s' % (str(readableAnswer)))
-                    return answerData
-                except socket.gaierror:
-#                    print '-------------NOT A VALID ADDRESS--------------'
-                    logging.error('Not a valid address %s' % (str_query))
+            try:
+                real_dns = socket.socket( socket.AF_INET, socket.SOCK_DGRAM)
+                real_dns.sendto(data,('8.8.8.8', 53))
+                answer_data, fromaddr = real_dns.recvfrom(1024)
+                real_dns.close()
+                readable_answer = DNSRecord.parse(answer_data)
+                logging.debug('DNS Reply: \n %s' % (str(readable_answer)))
+                return answer_data
+            except socket.gaierror:
+                logging.error('Not a valid address %s' % (str_query))
 
-        print '--------- Reply:\n %s' % (str(reply))
         logging.debug('DNS Reply: \n %s' % (str(reply)))
         return reply.pack()   # replies with an empty pack if address is not found
 
 
     def printThreads(self, currentThread, tnum):
-        print 'Current thread: %s \n Current threads alive: %d' % (str(currentThread), tnum)
         logging.debug('Current thread: %s \n Current threads alive: %d' % (str(currentThread), tnum))
 
 
-    class BaseRequestHandler(SocketServer.BaseRequestHandler):
+    class BaseRequestHandler(socketserver.BaseRequestHandler):
 
         def get_data(self):
             raise NotImplementedError
@@ -213,12 +194,10 @@ class DNSHandler(IOitems):
 
         def handle(self):
             now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')
-            print '\n\n%s request %s (%s %s):' % (self.__class__.__name__[:3], now, self.client_address[0], self.client_address[1])
             logging.debug('\n\n%s request %s (%s %s):' % (self.__class__.__name__[:3], now, self.client_address[0], self.client_address[1]))
 
             try:
                 data = self.get_data()
-                print len(data), data.encode('hex')
                 logging.debug('Length: %d %s' % (len(data), data.encode('hex')))
                 self.send_data(Controller().dns_response(data))
             except Exception:
@@ -233,3 +212,16 @@ class DNSHandler(IOitems):
 
         def send_data(self, data):
             return self.request[1].sendto(data, self.client_address)
+
+class HandlerFactory(object):
+
+    def http_factory(self, name):
+        if name == 'nginx': return View.NginxServerHandler
+        elif name == 'Apache': return View.ApacheServerHandler
+        elif name == 'gws': return View.GwsServerHandler
+        elif name == 'IIS': return View.IISServerHandler
+        else:
+            logging.debug('%s type of handler not found.' % (name))
+
+    def https_factory(self):
+        return View.HTTPShandler

@@ -1,6 +1,6 @@
 import argparse
-from Controller import *
-from Model import *
+import logging
+from Servers import *
 
 def keepRunning():
     running = True
@@ -14,19 +14,21 @@ def keepRunning():
 
 #TODO: build standalone for DNS
 if __name__ == '__main__':
-    print 'Starting HTTP/HTTPS web servers...'
-    mainItem = IOitems()
-    launchOptions(mainItem)
-    Model.setLists(mainItem)
-    mainItem.startServers()
+    logging.basicConfig(filename='debugging.log', level=logging.DEBUG)
+    logging.debug('Starting HTTP/HTTPS web servers...')
+    #mainItem = IOitems()
+    #launchOptions(mainItem)
+    #Model.setLists(mainItem)
+    #mainItem.startServers()
+    test = Server()
+    my_server = test.factory("HTTP", 8080)
+    my_server.run() 
     try:
         while(keepRunning()):
            time.sleep(1)
            sys.stderr.flush()
            sys.stdout.flush()
     except (KeyboardInterrupt, SystemExit):
-        print('Terminated via SIGNINT')
-#        logging.debug('Terminated via SIGINT')
-#        raise
+        logging.critical('Terminated via SIGNINT')
     finally:
         sys.exit(1)

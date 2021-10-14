@@ -23,7 +23,7 @@ class DNSServer(VirtualServer):
     def run(self):
         try:
             loggging.debug("DNS UDP server running on port %d" % self.port)
-            DNS = SocketServer.ThreadingUDPServer(("", self.port), Handlers.DNSHandler.UDPRequestHandler)
+            DNS = socketserver.ThreadingUDPServer(("", self.port), Handlers.DNSHandler.UDPRequestHandler)
             DNS.serve_forever()
         except(KeyboardInterrupt):
             logging.warn("Keyboard interrupt detected")
@@ -37,7 +37,7 @@ class HTTPServer(VirtualServer):
     def run(self):
         try:
             logging.debug("Serving HTTP at port %d" % self.port)
-            http_server = SocketServer.TCPServer(("", self.port), Handlers.BaseHandler)
+            http_server = socketserver.TCPServer(("", self.port), Handlers.BaseHandler)
             http_server.serve_forever()
         except (KeyboardInterrupt):
             logging.warn("Keyboard interrupt detected")
